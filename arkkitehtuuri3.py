@@ -4,8 +4,8 @@ import sysv_ipc
 import random
 
 lock = multiprocessing.Lock()
-NUM_CHILDREN = 4  # Lapsiprosessien määrä
-SHM_SIZE = NUM_CHILDREN * 8  # Tarvittava tila (8 tavua per int64)
+NUM_CHILDREN = 4  # Amount of childprocesses
+SHM_SIZE = NUM_CHILDREN * 8  # Memory space we need (8 tavua per int64)
 
 def ftok():
     numberseries = ""
@@ -26,17 +26,17 @@ def scheduler(event):
         
 
 
-    # Odotetaan, että init-signaali tulee
+    # Waiting for init -signal
     event.wait()
 
-    # Luetaan muistista ja dekoodataan tiedot
+    # Reading from memory and decoding infromation
     shm.attach()
-    data = shm.read(SHM_SIZE).decode('utf-8').strip('\x00')  # Luetaan ja siivotaan tyhjät tavut
-    numbers = list(map(int, data.split(',')))  # Muutetaan lista numeroiksi
+    data = shm.read(SHM_SIZE).decode('utf-8').strip('\x00')  # Raeding data
+    numbers = list(map(int, data.split(',')))  # Converting list to numbers
     numbers = sorted(numbers)
     print("Scheduler received numbers:", numbers)
 
-    # Poistetaan muistisegmentti
+    # removing memory segment
     shm.detach()
     shm.remove()
 
@@ -48,48 +48,48 @@ def child_process(pipe):
 def init(pipes, event):
     numbers = []
     i = 0
-    # Luodaan lapsiprosessit
+    # Creating childprocesses
     for i in range(NUM_CHILDREN):
-        pid = os.fork()  # Käytetään fork() oikein
+        pid = os.fork()  # Let's use fork() rightly
 
-        if pid == 0:  # Lapsiprosessi
-            child_pipe = pipes[i][1]  # Lapsi käyttää lähetysputkea
+        if pid == 0:  # Childprocess
+            child_pipe = pipes[i][1]  # Child using pipe to send
             child_process(child_pipe)
-            os._exit(0)  # Lapsiprosessi päättyy
+            os._exit(0)  # Childprocess ending
 
-    # Vanhempi prosessi lukee lapsilta saadut numerot
+    # Init process reading numbers from shared memory
     for i in range(NUM_CHILDREN):
-        parent_pipe = pipes[i][0]  # Vanhempi käyttää vastaanottoputkea
-        received_number = parent_pipe.recv()  # Luetaan numero lapsiprosessilta
+        parent_pipe = pipes[i][0]  # init using pipe to receive 
+        received_number = parent_pipe.recv()  # reading numbers from child process
         numbers.append(received_number)
 
-    # Liitytään jaettuun muistiin ja tallennetaan numerot merkkijonoksi
+    # Joining to shared memory
     try:
         shm = sysv_ipc.SharedMemory(SHM_KEY)
         shm.attach()
-        shm.write(','.join(map(str, numbers)).encode('utf-8'))  # Muutetaan numerot merkkijonoksi
+        shm.write(','.join(map(str, numbers)).encode('utf-8'))  # chanching numbers to map
         shm.detach()
     except Exception as e:
         print("Error writing to shared memory:", e)
 
-    # Ilmoitetaan schedulerille, että init on valmis
+    # Notifying to scheduler that init is ready
     event.set()
 
     
 if __name__ == "__main__":
-    # Luodaan pipe jokaiselle lapsiprosessille
+    # Creating pipe for each child process
     pipes = [multiprocessing.Pipe() for _ in range(NUM_CHILDREN)]
 
-    # Luodaan synkronointitapahtuma
+    # Creating synchronizing event
     event = multiprocessing.Event()
     
 
-    # Luodaan scheduler-prosessi
+    # Creating scheduler process
     scheduler_process = multiprocessing.Process(target=scheduler, args=(event,))
     scheduler_process.start()
 
-    # Kutsutaan init-funktiota
+    # Calling init function
     init(pipes, event)
 
-    # Odotetaan, että scheduler on valmis
+    # Waiting that scheduler is ready
     scheduler_process.join()
