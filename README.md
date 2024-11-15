@@ -1,1 +1,1 @@
-# ArchitectureProject
+Another school project. This time we are creating process that creates 4 childprocesses. These childprocesses pick a random number between 0-19 and send this number to main process. Scheduler creates memory segment where main process saves these 4 numbers.
